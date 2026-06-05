@@ -1,7 +1,11 @@
-from fastapi import FastAPI, UploadFile, File
+import tempfile
+from fastapi import FastAPI, File, UploadFile
 import torch
 import torchaudio
-import tempfile
+from dotenv import load_all, load_dotenv  # <-- Import dotenv
+
+# Load environment variables from the .env file
+load_dotenv()
 
 from transformers import (
     AutoFeatureExtractor,
@@ -12,6 +16,7 @@ MODEL_ID = "space-cadet/wavlm-ser"
 
 app = FastAPI()
 
+# Transformers automatically picks up the HF_TOKEN from the environment now!
 feature_extractor = AutoFeatureExtractor.from_pretrained(MODEL_ID)
 model = AutoModelForAudioClassification.from_pretrained(MODEL_ID)
 
@@ -53,6 +58,6 @@ async def predict(file: UploadFile = File(...)):
     probs = torch.softmax(outputs.logits, dim=-1)
 
     return {
-        model.config.id2label[i]: float(probs[0][i])
-        for i in range(probs.shape[1])
+        model.config.id2label[i]: float(probs[i])
+        for i in range(probs.shape)
     }
