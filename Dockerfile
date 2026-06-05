@@ -4,6 +4,9 @@ WORKDIR /app
 
 COPY requirements.txt .
 
+# speechbrain needs numpy installed first to avoid build issues
+RUN pip install --no-cache-dir numpy
+RUN pip install --no-cache-dir speechbrain
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .

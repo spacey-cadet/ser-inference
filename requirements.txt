@@ -3,6 +3,7 @@ uvicorn
 torch
 torchaudio
 transformers
+speechbrain
 huggingface_hub
 python-multipart
 python-dotenv
