@@ -10,15 +10,17 @@ from transformers import (
     AutoModelForAudioClassification,
 )
 
-# Load environment variables from the .env file
+# Load .env for local dev; in Docker, HF_TOKEN comes from runtime env vars
 load_dotenv()
 
 MODEL_ID = "space-cadet/wavlm-ser"
-HF_TOKEN = os.getenv("HF_TOKEN")
+HF_TOKEN = os.environ.get("HF_TOKEN")
+
+if not HF_TOKEN:
+    raise RuntimeError("HF_TOKEN environment variable is not set")
 
 app = FastAPI()
 
-# Pass token explicitly so it works across all transformers versions
 feature_extractor = AutoFeatureExtractor.from_pretrained(MODEL_ID, token=HF_TOKEN)
 model = AutoModelForAudioClassification.from_pretrained(MODEL_ID, token=HF_TOKEN)
 model.eval()
@@ -31,8 +33,7 @@ def health():
 
 @app.post("/predict")
 async def predict(file: UploadFile = File(...)):
-
-    with tempfile.NamedTemporaryFile(delete=False) as tmp:
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
         tmp.write(await file.read())
         path = tmp.name
 
@@ -41,7 +42,6 @@ async def predict(file: UploadFile = File(...)):
     if sr != 16000:
         waveform = torchaudio.functional.resample(waveform, sr, 16000)
 
-    # Mix down to mono
     waveform = waveform.mean(dim=0)
 
     inputs = feature_extractor(
@@ -53,10 +53,10 @@ async def predict(file: UploadFile = File(...)):
     with torch.no_grad():
         outputs = model(**inputs)
 
-    # Remove batch dim before indexing: shape is (1, num_classes) → (num_classes,)
+    # squeeze batch dim: (1, num_classes) -> (num_classes,)
     probs = torch.softmax(outputs.logits, dim=-1)[0]
 
     return {
-        model.config.id2label[i]: float(probs[i])
+        model.config.id2label[i]: round(float(probs[i]), 4)
         for i in range(len(probs))
     }
