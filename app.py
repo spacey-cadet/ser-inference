@@ -1,8 +1,7 @@
 import tempfile
 from fastapi import FastAPI, File, UploadFile
 import torch
-import torchaudio
-from dotenv import load_all, load_dotenv  # <-- Import dotenv
+from dotenv import load_dotenv
 
 # Load environment variables from the .env file
 load_dotenv()
