@@ -1,0 +1,7 @@
+fastapi
+uvicorn
+torch
+torchaudio
+transformers
+huggingface_hub
+python-multipart
