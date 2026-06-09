@@ -174,7 +174,6 @@ app = FastAPI()
 def health():
     return {"status": "ok"}
 
-
 @app.post("/predict")
 async def predict(file: UploadFile = File(...)):
     suffix = Path(file.filename).suffix if file.filename else ".audio"
