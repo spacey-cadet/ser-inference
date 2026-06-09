@@ -3,8 +3,10 @@ import tempfile
 from pathlib import Path
 
 import torch
-import torchaudio
 import torch.nn as nn
+import torch.nn.functional as F
+import numpy as np
+import soundfile as sf
 from dotenv import load_dotenv
 from fastapi import FastAPI, File, UploadFile
 
@@ -33,6 +35,21 @@ class MLPClassifier(nn.Module):
         if x.dim() == 3:
             x = x.squeeze(1)
         return self.w(x)
+
+# ── Resampling Helper Function ─────────────────────────────────────────
+def resample_audio(wav, orig_freq, new_freq):
+    """Resamples a 2D torch tensor [channels, time] using linear interpolation."""
+    if orig_freq == new_freq:
+        return wav
+    
+    # Calculate new length
+    orig_len = wav.shape
+    new_len = int(orig_len * (new_freq / orig_freq))
+    
+    # unsqueeze to [channels, 1, time] for interpolate
+    wav = wav.unsqueeze(1)
+    wav = F.interpolate(wav, size=new_len, mode='linear', align_corners=False)
+    return wav.squeeze(1)
 
 # ── Load model at startup ──────────────────────────────────────────────
 def load_model():
@@ -95,26 +112,45 @@ async def predict(file: UploadFile = File(...)):
         tmp.write(await file.read())
         path = tmp.name
 
-    wav, sr = torchaudio.load(path)
+    try:
+        # Load audio via soundfile
+        wav_np, sr = sf.read(path)
+        
+        # Convert to torch tensor
+        wav = torch.tensor(wav_np, dtype=torch.float32)
+        
+        # Ensure shape is [channels, time]
+        if wav.ndim == 1:
+            wav = wav.unsqueeze(0)  # [1, T] for mono
+        else:
+            wav = wav.T             # Transpose to [channels, T] if stereo
 
-    if sr != 16000:
-        wav = torchaudio.functional.resample(wav, orig_freq=sr, new_freq=16000)
+        # Handle stereo downmixing
+        if wav.shape > 1:
+            wav = wav.mean(dim=0, keepdim=True)
 
-    if wav.shape[0] > 1:
-        wav = wav.mean(dim=0, keepdim=True)
+        # Handle resampling
+        if sr != 16000:
+            wav = resample_audio(wav, orig_freq=sr, new_freq=16000)
 
-    wav     = wav.squeeze(0).unsqueeze(0)   # [1, T]
-    wav_lens = torch.tensor([1.0])
+        # Standardize shape to [1, T] for model processing
+        wav = wav.squeeze(0).unsqueeze(0)
+        wav_lens = torch.tensor([1.0])
 
-    with torch.no_grad():
-        features = wavlm(wav)
-        if isinstance(features, dict):
-            features = features["last_hidden_state"]
-        pooled = pooling(features, wav_lens)
-        logits = classifier(pooled)
-        probs  = torch.softmax(logits, dim=-1).squeeze(0)  # [8]
+        with torch.no_grad():
+            features = wavlm(wav)
+            if isinstance(features, dict):
+                features = features["last_hidden_state"]
+            pooled = pooling(features, wav_lens)
+            logits = classifier(pooled)
+            probs  = torch.softmax(logits, dim=-1).squeeze(0)  #
 
-    return {
-        IDX_TO_EMOTION[i]: round(float(probs[i]), 4)
-        for i in range(NUM_CLASSES)
-    }
+        return {
+            IDX_TO_EMOTION[i]: round(float(probs[i]), 4)
+            for i in range(NUM_CLASSES)
+        }
+        
+    finally:
+        # Ensure temporary file is cleaned up
+        if os.path.exists(path):
+            os.remove(path)

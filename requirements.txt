@@ -9,3 +9,4 @@ python-multipart
 python-dotenv
 torchcodec
 soundfile
+numpy
