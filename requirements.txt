@@ -7,3 +7,4 @@ speechbrain
 huggingface_hub
 python-multipart
 python-dotenv
+torchcodec
