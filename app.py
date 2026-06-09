@@ -63,8 +63,9 @@ def decode_audio_to_tensor(path: str) -> tuple[torch.Tensor, int]:
 
     frames = []
     for frame in container.decode(stream):
-        frame = frame.reformat(format='fltp')
-        frames.append(torch.from_numpy(frame.to_ndarray()))
+        # to_ndarray with format='fltp' gives [channels, samples] float32
+        arr = frame.to_ndarray(format='fltp')
+        frames.append(torch.from_numpy(arr))
 
     container.close()
 
