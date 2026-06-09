@@ -1,4 +1,5 @@
 .env
 .venv
 test*.py
-testfile.wav
+testfile*.wav
+testfile*

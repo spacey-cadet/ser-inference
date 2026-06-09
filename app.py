@@ -23,16 +23,23 @@ NUM_CLASSES = 8
 if not HF_TOKEN:
     raise RuntimeError("HF_TOKEN environment variable is not set")
 
+
 # ── Model definition (must match training) ─────────────────────────────
 class MLPClassifier(nn.Module):
-    def __init__(self, input_size=1536, n_classes=8):
+    def __init__(self, input_size=1536, hidden=256, n_classes=8, dropout=0.3):
         super().__init__()
-        self.w = nn.Linear(input_size, n_classes)
+        self.net = nn.Sequential(
+            nn.Linear(input_size, hidden),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(hidden, n_classes),
+        )
 
     def forward(self, x):
         if x.dim() == 3:
             x = x.squeeze(1)
-        return self.w(x)
+        return self.net(x)
+
 
 # ── Resample Core ──────────────────────────────────────────────────────
 def process_and_resample_tensor(audio_tensor, orig_rate, target_rate=16000):
@@ -49,6 +56,7 @@ def process_and_resample_tensor(audio_tensor, orig_rate, target_rate=16000):
     audio_tensor = audio_tensor.unsqueeze(1)
     audio_tensor = F.interpolate(audio_tensor, size=new_length, mode='linear', align_corners=False)
     return audio_tensor.squeeze(1)
+
 
 # ── Audio Decoder ──────────────────────────────────────────────────────
 def decode_audio_to_tensor(path: str) -> tuple[torch.Tensor, int]:
@@ -80,10 +88,11 @@ def decode_audio_to_tensor(path: str) -> tuple[torch.Tensor, int]:
     signal = torch.cat(frames, dim=1)  # [channels, time]
     return signal, sample_rate
 
+
 # ── Load model at startup ──────────────────────────────────────────────
 def load_model():
     from huggingface_hub import snapshot_download
-    from speechbrain.integrations.huggingface.wavlm import WavLM
+    from speechbrain.lobes.models.huggingface_transformers.wavlm import WavLM
     from speechbrain.nnet.pooling import StatisticsPooling
 
     local_dir = snapshot_download(
@@ -98,6 +107,7 @@ def load_model():
     if not ckpt_dirs:
         raise FileNotFoundError(f"No CKPT+* folder found in {local_dir}")
     ckpt_dir = ckpt_dirs[-1]
+    print(f"Loading checkpoint: {ckpt_dir.name}")
 
     wavlm = WavLM(
         source="microsoft/wavlm-base-plus",
@@ -111,6 +121,7 @@ def load_model():
     if wavlm_ckpt.exists():
         state = torch.load(str(wavlm_ckpt), map_location="cpu", weights_only=True)
         wavlm.load_state_dict(state, strict=False)
+        print("WavLM weights loaded")
 
     pooling    = StatisticsPooling()
     classifier = MLPClassifier()
@@ -118,7 +129,11 @@ def load_model():
     clf_ckpt = ckpt_dir / "classifier.ckpt"
     if clf_ckpt.exists():
         state = torch.load(str(clf_ckpt), map_location="cpu", weights_only=True)
-        classifier.load_state_dict(state)
+        print(f"Classifier keys in checkpoint: {list(state.keys())}")
+        classifier.load_state_dict(state, strict=True)
+        print("Classifier weights loaded successfully")
+    else:
+        raise FileNotFoundError(f"classifier.ckpt not found in {ckpt_dir}")
 
     wavlm.eval()
     pooling.eval()
@@ -127,13 +142,38 @@ def load_model():
     return wavlm, pooling, classifier
 
 
+def verify_model(wavlm, pooling, classifier):
+    """Sanity check — a trained model should not produce uniform ~0.125 probabilities."""
+    dummy = torch.randn(1, 16000)
+    with torch.no_grad():
+        feat = wavlm(dummy)
+        if isinstance(feat, dict):
+            feat = feat["last_hidden_state"]
+        pooled = pooling(feat, torch.tensor([1.0]))
+        logits = classifier(pooled)
+        probs  = torch.softmax(logits, dim=-1).squeeze(0)
+
+    max_conf = probs.max().item()
+    pred     = probs.argmax().item()
+    print(f"Sanity check → predicted: {IDX_TO_EMOTION[pred]}, confidence: {max_conf:.3f}")
+
+    if max_conf < 0.2:
+        raise RuntimeError(
+            f"Model looks uninitialised (max_conf={max_conf:.3f}). "
+            "Check that classifier.ckpt keys match MLPClassifier."
+        )
+
+
 wavlm, pooling, classifier = load_model()
+verify_model(wavlm, pooling, classifier)
 
 app = FastAPI()
+
 
 @app.get("/")
 def health():
     return {"status": "ok"}
+
 
 @app.post("/predict")
 async def predict(file: UploadFile = File(...)):
