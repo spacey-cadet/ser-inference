@@ -63,9 +63,7 @@ def decode_audio_to_tensor(path: str) -> tuple[torch.Tensor, int]:
 
     frames = []
     for frame in container.decode(stream):
-        # Convert to float32 planar (channels separate)
         frame = frame.reformat(format='fltp')
-        # frame.to_ndarray() → [channels, samples]
         frames.append(torch.from_numpy(frame.to_ndarray()))
 
     container.close()
@@ -133,7 +131,6 @@ def health():
 
 @app.post("/predict")
 async def predict(file: UploadFile = File(...)):
-    # Preserve original extension so PyAV can pick the right demuxer
     suffix = Path(file.filename).suffix if file.filename else ".audio"
 
     with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
@@ -164,9 +161,16 @@ async def predict(file: UploadFile = File(...)):
             logits = classifier(pooled)
             probs  = torch.softmax(logits, dim=-1).squeeze(0)
 
+        probs_list = probs.tolist()
+        ranked = sorted(
+            [{"emotion": IDX_TO_EMOTION[i], "score": round(probs_list[i], 4)} for i in range(NUM_CLASSES)],
+            key=lambda x: x["score"],
+            reverse=True,
+        )
+
         return {
-            IDX_TO_EMOTION[i]: round(float(probs[i]), 4)
-            for i in range(NUM_CLASSES)
+            "top_emotion": ranked[0]["emotion"],
+            "ranking": ranked,
         }
 
     finally:
