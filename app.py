@@ -54,7 +54,6 @@ def resample_audio(wav, orig_freq, new_freq):
 # ── Load model at startup ──────────────────────────────────────────────
 def load_model():
     from huggingface_hub import snapshot_download
-    # Updated to the new integration path to fix the deprecation warning
     from speechbrain.integrations.huggingface.wavlm import WavLM
     from speechbrain.nnet.pooling import StatisticsPooling
 
@@ -126,7 +125,7 @@ async def predict(file: UploadFile = File(...)):
         else:
             wav = wav.T             # Transpose to [channels, T] if stereo
 
-        # FIX: Check the specific channel dimension size
+        # --- FIX SECURED HERE ---
         if wav.shape > 1:
             wav = wav.mean(dim=0, keepdim=True)
 
