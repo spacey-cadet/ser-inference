@@ -46,7 +46,7 @@ def process_and_resample_tensor(audio_tensor, orig_rate, target_rate=16000):
     if orig_rate == target_rate:
         return audio_tensor
     
-    old_length = int(audio_tensor.shape)
+    old_length = int(audio_tensor.size(1))
     new_length = int(old_length * (target_rate / orig_rate))
     
     # Format to 3D for interpolation: [channels, 1, time]
@@ -123,15 +123,15 @@ async def predict(file: UploadFile = File(...)):
         # 2. Map directly to float tensor
         signal = torch.tensor(raw_numpy_array, dtype=torch.float32)
         
-        # 3. Structure structural axis to [channels, time]
+        # 3. Structure axis to [channels, time]
         if signal.ndim == 1:
             signal = signal.unsqueeze(0)
         else:
             signal = signal.T
 
-        # 4. Mix down if structural channel count is explicitly stereo
-        # FIX: Explicitly access the first dimension index
-        if int(signal.shape) > 1:
+        # 4. Mix down if channels dimension indicates stereo
+        # ALTERNATIVE METHOD: Uses .size(0) directly to flush sticky caching
+        if signal.size(0) > 1:
             signal = signal.mean(dim=0, keepdim=True)
 
         # 5. Process resampling sequence
