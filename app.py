@@ -38,16 +38,14 @@ class MLPClassifier(nn.Module):
         return self.w(x)
 
 
-# ── Unique Cache-Breaking Resample Core ────────────────────────────────
+# ── Resample Core ──────────────────────────────────────────────────────
 def process_and_resample_tensor(audio_tensor, orig_rate, target_rate=16000):
     """
     Handles interpolation resampling safely using pure torch operations.
-    Explicitly reads integer dimensions to bypass old cached tuple comparison bugs.
     """
     if orig_rate == target_rate:
         return audio_tensor
     
-    total_channels = int(audio_tensor.shape)
     old_length = int(audio_tensor.shape)
     new_length = int(old_length * (target_rate / orig_rate))
     
@@ -132,11 +130,11 @@ async def predict(file: UploadFile = File(...)):
             signal = signal.T
 
         # 4. Mix down if structural channel count is explicitly stereo
-        channel_count = int(signal.shape)
-        if channel_count > 1:
+        # FIX: Explicitly access the first dimension index
+        if int(signal.shape) > 1:
             signal = signal.mean(dim=0, keepdim=True)
 
-        # 5. Process resampling sequence via modified function name
+        # 5. Process resampling sequence
         if sample_rate != 16000:
             signal = process_and_resample_tensor(signal, orig_rate=sample_rate, target_rate=16000)
 
