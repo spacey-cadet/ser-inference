@@ -25,6 +25,7 @@ NUM_CLASSES = 8
 if not HF_TOKEN:
     raise RuntimeError("HF_TOKEN environment variable is not set")
 
+
 # ── Model definition (must match training) ─────────────────────────────
 class MLPClassifier(nn.Module):
     def __init__(self, input_size=1536, n_classes=8):
@@ -36,20 +37,25 @@ class MLPClassifier(nn.Module):
             x = x.squeeze(1)
         return self.w(x)
 
-# ── Resampling Helper Function ─────────────────────────────────────────
-def resample_audio(wav, orig_freq, new_freq):
-    """Resamples a 2D torch tensor [channels, time] using linear interpolation."""
-    if orig_freq == new_freq:
-        return wav
+
+# ── Unique Cache-Breaking Resample Core ────────────────────────────────
+def process_and_resample_tensor(audio_tensor, orig_rate, target_rate=16000):
+    """
+    Handles interpolation resampling safely using pure torch operations.
+    Explicitly reads integer dimensions to bypass old cached tuple comparison bugs.
+    """
+    if orig_rate == target_rate:
+        return audio_tensor
     
-    # Calculate new length
-    orig_len = wav.shape
-    new_len = int(orig_len * (new_freq / orig_freq))
+    total_channels = int(audio_tensor.shape)
+    old_length = int(audio_tensor.shape)
+    new_length = int(old_length * (target_rate / orig_rate))
     
-    # unsqueeze to [channels, 1, time] for interpolate
-    wav = wav.unsqueeze(1)
-    wav = F.interpolate(wav, size=new_len, mode='linear', align_corners=False)
-    return wav.squeeze(1)
+    # Format to 3D for interpolation: [channels, 1, time]
+    audio_tensor = audio_tensor.unsqueeze(1)
+    audio_tensor = F.interpolate(audio_tensor, size=new_length, mode='linear', align_corners=False)
+    return audio_tensor.squeeze(1)
+
 
 # ── Load model at startup ──────────────────────────────────────────────
 def load_model():
@@ -113,37 +119,38 @@ async def predict(file: UploadFile = File(...)):
         path = tmp.name
 
     try:
-        # Load audio via soundfile
-        wav_np, sr = sf.read(path)
+        # 1. Load data via soundfile array 
+        raw_numpy_array, sample_rate = sf.read(path)
         
-        # Convert to torch tensor
-        wav = torch.tensor(wav_np, dtype=torch.float32)
+        # 2. Map directly to float tensor
+        signal = torch.tensor(raw_numpy_array, dtype=torch.float32)
         
-        # Ensure shape is [channels, time]
-        if wav.ndim == 1:
-            wav = wav.unsqueeze(0)  # [1, T] for mono
+        # 3. Structure structural axis to [channels, time]
+        if signal.ndim == 1:
+            signal = signal.unsqueeze(0)
         else:
-            wav = wav.T             # Transpose to [channels, T] if stereo
+            signal = signal.T
 
-        # --- FIX SECURED HERE ---
-        if wav.shape > 1:
-            wav = wav.mean(dim=0, keepdim=True)
+        # 4. Mix down if structural channel count is explicitly stereo
+        channel_count = int(signal.shape)
+        if channel_count > 1:
+            signal = signal.mean(dim=0, keepdim=True)
 
-        # Handle resampling
-        if sr != 16000:
-            wav = resample_audio(wav, orig_freq=sr, new_freq=16000)
+        # 5. Process resampling sequence via modified function name
+        if sample_rate != 16000:
+            signal = process_and_resample_tensor(signal, orig_rate=sample_rate, target_rate=16000)
 
-        # Standardize shape to [1, T] for model processing
-        wav = wav.squeeze(0).unsqueeze(0)
+        # 6. Format to batch structure [1, time] for WavLM input
+        final_waveform = signal.squeeze(0).unsqueeze(0)
         wav_lens = torch.tensor([1.0])
 
         with torch.no_grad():
-            features = wavlm(wav)
+            features = wavlm(final_waveform)
             if isinstance(features, dict):
                 features = features["last_hidden_state"]
             pooled = pooling(features, wav_lens)
             logits = classifier(pooled)
-            probs  = torch.softmax(logits, dim=-1).squeeze(0)  #
+            probs  = torch.softmax(logits, dim=-1).squeeze(0)
 
         return {
             IDX_TO_EMOTION[i]: round(float(probs[i]), 4)
@@ -151,6 +158,5 @@ async def predict(file: UploadFile = File(...)):
         }
         
     finally:
-        # Ensure temporary file is cleaned up
         if os.path.exists(path):
             os.remove(path)
