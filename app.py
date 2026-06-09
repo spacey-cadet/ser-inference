@@ -1,12 +1,10 @@
 import os
 import tempfile
 from pathlib import Path
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import numpy as np
-import soundfile as sf
+import av
 from dotenv import load_dotenv
 from fastapi import FastAPI, File, UploadFile
 
@@ -25,7 +23,6 @@ NUM_CLASSES = 8
 if not HF_TOKEN:
     raise RuntimeError("HF_TOKEN environment variable is not set")
 
-
 # ── Model definition (must match training) ─────────────────────────────
 class MLPClassifier(nn.Module):
     def __init__(self, input_size=1536, n_classes=8):
@@ -37,7 +34,6 @@ class MLPClassifier(nn.Module):
             x = x.squeeze(1)
         return self.w(x)
 
-
 # ── Resample Core ──────────────────────────────────────────────────────
 def process_and_resample_tensor(audio_tensor, orig_rate, target_rate=16000):
     """
@@ -45,15 +41,40 @@ def process_and_resample_tensor(audio_tensor, orig_rate, target_rate=16000):
     """
     if orig_rate == target_rate:
         return audio_tensor
-    
+
     old_length = int(audio_tensor.size(1))
     new_length = int(old_length * (target_rate / orig_rate))
-    
+
     # Format to 3D for interpolation: [channels, 1, time]
     audio_tensor = audio_tensor.unsqueeze(1)
     audio_tensor = F.interpolate(audio_tensor, size=new_length, mode='linear', align_corners=False)
     return audio_tensor.squeeze(1)
 
+# ── Audio Decoder ──────────────────────────────────────────────────────
+def decode_audio_to_tensor(path: str) -> tuple[torch.Tensor, int]:
+    """
+    Decodes any audio format (m4a, mp4, mp3, wav, flac, etc.)
+    to a float32 tensor of shape [channels, time] using PyAV.
+    Returns (tensor, sample_rate).
+    """
+    container = av.open(path)
+    stream = container.streams.audio[0]
+    sample_rate = stream.codec_context.sample_rate
+
+    frames = []
+    for frame in container.decode(stream):
+        # Convert to float32 planar (channels separate)
+        frame = frame.reformat(format='fltp')
+        # frame.to_ndarray() → [channels, samples]
+        frames.append(torch.from_numpy(frame.to_ndarray()))
+
+    container.close()
+
+    if not frames:
+        raise ValueError("No audio frames decoded")
+
+    signal = torch.cat(frames, dim=1)  # [channels, time]
+    return signal, sample_rate
 
 # ── Load model at startup ──────────────────────────────────────────────
 def load_model():
@@ -81,6 +102,7 @@ def load_model():
         freeze=True,
         freeze_feature_extractor=True,
     )
+
     wavlm_ckpt = ckpt_dir / "wavlm.ckpt"
     if wavlm_ckpt.exists():
         state = torch.load(str(wavlm_ckpt), map_location="cpu", weights_only=True)
@@ -97,6 +119,7 @@ def load_model():
     wavlm.eval()
     pooling.eval()
     classifier.eval()
+
     return wavlm, pooling, classifier
 
 
@@ -104,41 +127,32 @@ wavlm, pooling, classifier = load_model()
 
 app = FastAPI()
 
-
 @app.get("/")
 def health():
     return {"status": "ok"}
 
-
 @app.post("/predict")
 async def predict(file: UploadFile = File(...)):
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
+    # Preserve original extension so PyAV can pick the right demuxer
+    suffix = Path(file.filename).suffix if file.filename else ".audio"
+
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
         tmp.write(await file.read())
         path = tmp.name
 
     try:
-        # 1. Load data via soundfile array 
-        raw_numpy_array, sample_rate = sf.read(path)
-        
-        # 2. Map directly to float tensor
-        signal = torch.tensor(raw_numpy_array, dtype=torch.float32)
-        
-        # 3. Structure axis to [channels, time]
-        if signal.ndim == 1:
-            signal = signal.unsqueeze(0)
-        else:
-            signal = signal.T
+        # 1. Decode any format → [channels, time] float32 tensor
+        signal, sample_rate = decode_audio_to_tensor(path)
 
-        # 4. Mix down if channels dimension indicates stereo
-        # ALTERNATIVE METHOD: Uses .size(0) directly to flush sticky caching
+        # 2. Mix down stereo → mono
         if signal.size(0) > 1:
             signal = signal.mean(dim=0, keepdim=True)
 
-        # 5. Process resampling sequence
+        # 3. Resample to 16kHz if needed
         if sample_rate != 16000:
             signal = process_and_resample_tensor(signal, orig_rate=sample_rate, target_rate=16000)
 
-        # 6. Format to batch structure [1, time] for WavLM input
+        # 4. Shape to [1, time] for WavLM
         final_waveform = signal.squeeze(0).unsqueeze(0)
         wav_lens = torch.tensor([1.0])
 
@@ -154,7 +168,7 @@ async def predict(file: UploadFile = File(...)):
             IDX_TO_EMOTION[i]: round(float(probs[i]), 4)
             for i in range(NUM_CLASSES)
         }
-        
+
     finally:
         if os.path.exists(path):
             os.remove(path)
