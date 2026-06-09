@@ -61,11 +61,16 @@ def decode_audio_to_tensor(path: str) -> tuple[torch.Tensor, int]:
     stream = container.streams.audio[0]
     sample_rate = stream.codec_context.sample_rate
 
+    resampler = av.audio.resampler.AudioResampler(format='fltp', layout='stereo', rate=sample_rate)
+
     frames = []
     for frame in container.decode(stream):
-        # to_ndarray with format='fltp' gives [channels, samples] float32
-        arr = frame.to_ndarray(format='fltp')
-        frames.append(torch.from_numpy(arr))
+        frame = resampler.resample(frame)
+        if isinstance(frame, list):
+            for f in frame:
+                frames.append(torch.from_numpy(f.to_ndarray()))
+        else:
+            frames.append(torch.from_numpy(frame.to_ndarray()))
 
     container.close()
 
