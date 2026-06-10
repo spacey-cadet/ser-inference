@@ -217,7 +217,6 @@ async def predict(file: UploadFile = File(...)):
             "top_emotion": ranked[0]["emotion"],
             "ranking": ranked,
         }
-
     finally:
         if os.path.exists(path):
             os.remove(path)
