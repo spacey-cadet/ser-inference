@@ -1,13 +1,33 @@
+# Core serving
 fastapi
-uvicorn
+uvicorn[standard]
+python-multipart
+python-dotenv
+pydantic-settings
+
+# Model / inference
 torch
 torchaudio
 transformers
 speechbrain
 huggingface_hub
-python-multipart
-python-dotenv
-torchcodec
-soundfile
-numpy
 av
+numpy
+soundfile
+
+# Track 1 — modeling rigor / calibration
+scikit-learn
+scipy
+librosa
+matplotlib
+pandas
+
+# Track 2 — data quality / drift
+great_expectations
+webrtcvad
+
+# Track 2.5 — alerting
+requests
+
+# Track 3 — session state (optional Redis backend)
+redis
