@@ -3,3 +3,5 @@
 test*.py
 testfile*.wav
 testfile*
+__pycache__/
+model_cache/
