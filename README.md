@@ -120,7 +120,7 @@ pytest tests/ -v
 ## Where each Track-1/2/3 item in the guide lives
 
 | Guide item | Code / doc |
-|---|---|
+|---|---|$$
 | 1.1 Classical baseline | `scripts/baseline_classical_model.py` |
 | 1.2 Calibration | `scripts/calibration_fit.py` (offline fit) → `app/calibration/calibrate.py` (applied online) |
 | 1.3 Confidence cascade | `app/inference/cascade.py` |
@@ -137,10 +137,12 @@ pytest tests/ -v
 | 3.4 Latency | `scripts/benchmark_latency.py`, tracked in `app/inference/predict.py`'s `latency_ms` |
 | 3.5 CI/CD | `.github/workflows/ci-eval-gate.yml` |
 
-## Build order
 
-Follow `docs/PLAN.md` — it's the same four-weekend phasing as the guide,
-adjusted for this repo's actual file paths. Start with Phase 1
-(calibration + cascade + latency benchmark): those compound the longer
-they're delayed and don't depend on any logging infrastructure being live
-yet.
+---
+title: Ser Inference
+emoji: 🚀
+colorFrom: pink
+colorTo: green
+sdk: docker
+pinned: false
+---
