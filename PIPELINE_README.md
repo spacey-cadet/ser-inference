@@ -3,7 +3,7 @@
 This repo turns the single-endpoint `ser-inference` service into the
 production-grade pipeline described in `docs/PLAN.md`, built entirely on
 free-tier infrastructure (Hugging Face Spaces + GitHub Actions + SQLite/HF
-Datasets), and mapped directly to Track 1 (modeling rigor/calibration),
+Datasets), and mapped directly to Three Tracks: Track 1 (modeling rigor/calibration),
 Track 2 (data quality/drift/retraining loop), and Track 3
 (rollout/registry/session-state/latency) from the pipeline guide.
 

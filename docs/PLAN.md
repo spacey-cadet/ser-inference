@@ -1,8 +1,3 @@
-# Build Plan
-
-Same phasing as the pipeline guide, mapped to this repo's files. Each phase
-is a weekend-sized chunk and produces something runnable — you're not
-blocked waiting for a later phase to see value from an earlier one.
 
 ## Phase 1 — Foundations
 
