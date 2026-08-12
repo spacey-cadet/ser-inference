@@ -1,0 +1,75 @@
+name: Deploy to AWS Lambda
+
+on:
+  repository_dispatch:
+    types: [deploy-triggered]
+  push:
+    branches: [aws-serverless]
+    paths:
+      - "app/**"
+      - "infra/aws-serverless/**"
+  workflow_dispatch: {}
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY: ser-inference
+  LAMBDA_FUNCTION: ser-inference
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push (provenance/sbom OFF — Lambda rejects the
+              multi-manifest index otherwise, same gotcha as Project 1)
+        run: |
+          docker buildx build --platform linux/amd64 \
+            --provenance=false --sbom=false \
+            --build-arg HF_MODEL_REPO=${{ vars.HF_MODEL_REPO }} \
+            --build-arg HF_MODEL_REVISION=${{ vars.HF_CHAMPION_REVISION }} \
+            --build-arg HF_TOKEN=${{ secrets.HF_TOKEN }} \
+            -f infra/aws-serverless/Dockerfile.lambda \
+            -t ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }} \
+            -t ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:latest \
+            --push .
+
+      - name: Update Lambda function code
+        run: |
+          aws lambda update-function-code \
+            --function-name ${{ env.LAMBDA_FUNCTION }} \
+            --image-uri ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
+
+      - name: Wait for update to finish
+        run: |
+          aws lambda wait function-updated \
+            --function-name ${{ env.LAMBDA_FUNCTION }}
+
+      - name: Post deploy confirmation
+        run: |
+          python -c "
+import json, urllib.request, os
+text = 'Deployed new champion to Lambda: ${{ github.sha }}'
+body = json.dumps({'content': text, 'text': text}).encode()
+req = urllib.request.Request(os.environ['ALERT_WEBHOOK_URL'], data=body, headers={'Content-Type': 'application/json'})
+urllib.request.urlopen(req, timeout=5)
+"
+        env:
+          ALERT_WEBHOOK_URL: ${{ secrets.ALERT_WEBHOOK_URL }}

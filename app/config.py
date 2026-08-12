@@ -38,6 +38,16 @@ class Settings(BaseSettings):
     hf_dataset_repo: str = os.environ.get("HF_DATASET_REPO", "")
     drift_reference_path: str = os.environ.get("DRIFT_REFERENCE_PATH", "./data/drift_reference/train_features.json")
 
+    # ── AWS serverless storage ──────────────────────────────────────────
+    storage_backend: str = os.environ.get("STORAGE_BACKEND", "local")  # local | aws
+    audio_bucket: str = os.environ.get("AUDIO_BUCKET", "")
+    feature_log_prefix: str = os.environ.get("FEATURE_LOG_PREFIX", "feature-logs/")
+    audio_sample_prefix: str = os.environ.get("AUDIO_SAMPLE_PREFIX", "audio-samples/")
+    review_queue_table: str = os.environ.get("REVIEW_QUEUE_TABLE", "")
+    session_state_table: str = os.environ.get("SESSION_STATE_TABLE", "")
+    admin_ui_secret_param: str = os.environ.get("ADMIN_UI_SECRET_PARAM", "")
+    aws_region: str = os.environ.get("AWS_REGION", "us-east-1")
+
     # ── Consent / retention (Track 2.4) ─────────────────────────────────
     consent_required: bool = os.environ.get("CONSENT_REQUIRED", "true").lower() == "true"
     retention_days: int = int(os.environ.get("RETENTION_DAYS", "30"))

@@ -1,0 +1,63 @@
+# infra/aws-serverless/Dockerfile.lambda
+#
+# Builds the WavLM SER inference Lambda container. Model weights are
+# baked in at build time (not fetched at runtime) so cold start doesn't
+# depend on an HF Hub round-trip and the Lambda never needs outbound
+# internet at request time.
+#
+# Build with buildx and provenance/sbom OFF — Lambda's CreateFunction
+# rejects the multi-manifest OCI index that default buildx produces
+# (same gotcha hit in Project 1):
+#
+#   docker buildx build --platform linux/amd64 \
+#     --provenance=false --sbom=false \
+#     --build-arg HF_MODEL_REPO=your-org/wavlm-ser-head \
+#     --build-arg HF_MODEL_REVISION=<champion-revision-sha-or-tag> \
+#     -t <account>.dkr.ecr.us-east-1.amazonaws.com/ser-inference:latest \
+#     --push .
+
+FROM public.ecr.aws/lambda/python:3.11
+
+# WavLM (torch) needs OpenMP, same fix as lightgbm needed in Project 1's
+# Lambda base image.
+RUN dnf install -y libgomp && dnf clean all
+
+# --- Python deps ---
+# Pin torch/transformers exactly — this pin has to match whatever the
+# Kaggle training environment used, or CPU-inference numbers here won't
+# match the "very good" Kaggle eval. Adjust versions to your Kaggle
+# kernel's actual environment before building.
+COPY requirements.txt .
+RUN pip install --no-cache-dir --target "${LAMBDA_TASK_ROOT}" \
+    -r requirements.txt \
+    mangum \
+    huggingface_hub \
+    boto3
+
+# --- App code ---
+COPY app/ ${LAMBDA_TASK_ROOT}/app/
+
+# --- Bake the model in at build time ---
+# ARGs so CI can pin a specific champion revision without editing this
+# file; loader.py should read the local baked path at runtime instead
+# of hitting HF Hub, see app_patches/config/config_additions.py.
+ARG HF_MODEL_REPO
+ARG HF_MODEL_REVISION
+ARG HF_TOKEN=""
+ENV MODEL_LOCAL_PATH=${LAMBDA_TASK_ROOT}/model_artifacts
+
+RUN python -c "\
+import os; \
+from huggingface_hub import snapshot_download; \
+snapshot_download( \
+    repo_id=os.environ['HF_MODEL_REPO'], \
+    revision=os.environ.get('HF_MODEL_REVISION') or None, \
+    token=os.environ.get('HF_TOKEN') or None, \
+    local_dir=os.environ['MODEL_LOCAL_PATH'], \
+    local_dir_use_symlinks=False, \
+)"
+
+ENV STORAGE_BACKEND=aws
+ENV MODEL_SOURCE=local
+
+CMD ["app.main.handler"]

@@ -1,15 +1,14 @@
 import os
 import tempfile
-import time
 import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, File, Form, Header, HTTPException, Request, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 
 from app.audio.validate import AudioRejected
 from app.inference.predict import predict_from_path
 from app.logging_pipeline.consent import evaluate_consent, strip_identifying_metadata
-from app.logging_pipeline.review_queue import queue_stats, export_for_review
+from app.logging_pipeline.review_queue import export_for_review, queue_stats
 from app.routing.canary import select_model
 
 router = APIRouter()
@@ -49,8 +48,9 @@ async def predict(
     request_id = str(uuid.uuid4())
 
     suffix = Path(file.filename).suffix if file.filename else ".audio"
+    audio_bytes = await file.read()
     with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-        tmp.write(await file.read())
+        tmp.write(audio_bytes)
         path = tmp.name
 
     try:
@@ -95,6 +95,27 @@ async def predict(
                 model_revision=outcome.model_revision,
                 consent_granted=True,
             )
+            should_enqueue_review = (
+                outcome.cascade.log_for_review
+                and state.review_queue is not None
+                and hasattr(state.feature_log, "put_audio_sample")
+            )
+            if should_enqueue_review:
+                s3_audio_key = state.feature_log.put_audio_sample(
+                    request_id=request_id,
+                    audio_bytes=audio_bytes,
+                    content_type=file.content_type or "audio/wav",
+                )
+                state.review_queue.enqueue(
+                    request_id=request_id,
+                    s3_audio_key=s3_audio_key,
+                    prediction={
+                        "label": outcome.cascade.top_emotion,
+                        "response_emotion": outcome.cascade.response_emotion,
+                        "scores": outcome.cascade.ranking,
+                    },
+                    confidence=outcome.cascade.top_score,
+                )
 
         return {
             "request_id": request_id,
@@ -118,9 +139,9 @@ async def predict(
 def review_queue_stats(request: Request):
     """Track 2.3 — queue depth, for dashboards/alerting."""
     state = request.app.state
-    if state.feature_log is None:
-        raise HTTPException(status_code=404, detail="feature logging disabled")
-    stats = queue_stats(state.feature_log)
+    if state.review_queue is None:
+        raise HTTPException(status_code=404, detail="review queue disabled")
+    stats = queue_stats(state.review_queue)
     return {"unreviewed_count": stats.unreviewed_count, "oldest_unreviewed_ts": stats.oldest_unreviewed_ts}
 
 
@@ -128,6 +149,6 @@ def review_queue_stats(request: Request):
 def review_queue_export(request: Request, limit: int = 100):
     """Track 2.3 — pull a batch for manual labeling."""
     state = request.app.state
-    if state.feature_log is None:
-        raise HTTPException(status_code=404, detail="feature logging disabled")
-    return {"rows": export_for_review(state.feature_log, limit=limit)}
+    if state.review_queue is None:
+        raise HTTPException(status_code=404, detail="review queue disabled")
+    return {"rows": export_for_review(state.review_queue, limit=limit)}

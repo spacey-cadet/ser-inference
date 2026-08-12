@@ -1,0 +1,17 @@
+{
+  "id": "your-username/ser-retrain-head",
+  "title": "SER retrain head",
+  "code_file": "train_head_kernel.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": true,
+  "enable_gpu": true,
+  "enable_internet": false,
+  "dataset_sources": [
+    "your-username/ser-retrain-batch",
+    "your-username/ser-eval-set-pinned",
+    "your-username/ser-embeddings-cache"
+  ],
+  "kernel_sources": [],
+  "competition_sources": []
+}

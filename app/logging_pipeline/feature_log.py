@@ -123,6 +123,13 @@ class SqliteFeatureLog:
 
 
 def build_feature_log(settings):
+    if settings.storage_backend == "aws":
+        from app.logging_pipeline.s3_backend import S3FeatureLog
+        return S3FeatureLog(
+            bucket=settings.audio_bucket,
+            feature_prefix=settings.feature_log_prefix,
+            audio_prefix=settings.audio_sample_prefix,
+        )
     if settings.feature_log_backend == "sqlite":
         return SqliteFeatureLog(settings.sqlite_path)
     if settings.feature_log_backend == "hf_dataset":
