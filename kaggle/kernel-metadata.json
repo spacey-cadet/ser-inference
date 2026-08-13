@@ -10,7 +10,8 @@
   "dataset_sources": [
     "your-username/ser-retrain-batch",
     "your-username/ser-eval-set-pinned",
-    "your-username/ser-embeddings-cache"
+    "your-username/ser-embeddings-cache",
+    "your-username/ser-inference-src"
   ],
   "kernel_sources": [],
   "competition_sources": []

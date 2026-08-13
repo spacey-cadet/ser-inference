@@ -1,43 +1,35 @@
 name: Retrain (Kaggle-triggered)
-
 on:
   repository_dispatch:
     types: [retrain-triggered]
   workflow_dispatch: {}   # manual override, e.g. to force a run after adjusting policy thresholds
-
 permissions:
   id-token: write
   contents: read
-
 jobs:
   retrain:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
           aws-region: us-east-1
-
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-
       - run: pip install boto3 kaggle
-
       - name: Read last training watermark
         id: watermark
         run: |
           WATERMARK=$(python -c "
-import boto3
-t = boto3.resource('dynamodb').Table('ser-inference-retrain-state')
-item = t.get_item(Key={'state_key': 'watermark'}).get('Item', {})
-print(item.get('last_trained_at', '1970-01-01T00:00:00'))
-")
+          import boto3
+          t = boto3.resource('dynamodb').Table('ser-inference-retrain-state')
+          item = t.get_item(Key={'state_key': 'watermark'}).get('Item', {})
+          print(item.get('last_trained_at', '1970-01-01T00:00:00'))
+          ")
           echo "since=$WATERMARK" >> "$GITHUB_OUTPUT"
-
       - name: Assemble Kaggle batch (push mode — no AWS creds on Kaggle)
         run: |
           python scripts/assemble_kaggle_batch.py \
@@ -50,7 +42,6 @@ print(item.get('last_trained_at', '1970-01-01T00:00:00'))
         env:
           KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
           KAGGLE_KEY: ${{ secrets.KAGGLE_KEY }}
-
       - name: Trigger + poll Kaggle training kernel
         run: |
           python scripts/trigger_kaggle_kernel.py \
@@ -60,25 +51,23 @@ print(item.get('last_trained_at', '1970-01-01T00:00:00'))
         env:
           KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
           KAGGLE_KEY: ${{ secrets.KAGGLE_KEY }}
-
       - name: Fetch current champion's eval report
         run: |
           # Pulled from the HF Hub revision currently baked into the
           # deployed Lambda image, so the gate always diffs against
           # what's ACTUALLY live, not a stale local copy.
           python -c "
-from huggingface_hub import hf_hub_download
-import shutil
-path = hf_hub_download(
-    repo_id='${{ vars.HF_MODEL_REPO }}',
-    filename='metrics.json',
-    revision='${{ vars.HF_CHAMPION_REVISION }}',
-)
-shutil.copy(path, 'champion_eval_report.json')
-"
+          from huggingface_hub import hf_hub_download
+          import shutil
+          path = hf_hub_download(
+              repo_id='${{ vars.HF_MODEL_REPO }}',
+              filename='metrics.json',
+              revision='${{ vars.HF_CHAMPION_REVISION }}',
+          )
+          shutil.copy(path, 'champion_eval_report.json')
+          "
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
-
       - name: Run promotion gate (macro F1, epsilon 0.01)
         id: gate
         continue-on-error: true   # a reject is a valid, expected outcome — don't fail the job
@@ -91,42 +80,39 @@ shutil.copy(path, 'champion_eval_report.json')
             --recall-key recall.per_class \
             --per-class-tolerance 0.02 \
             --out decision.json
-
       - name: Post decision to alert webhook
         run: |
           python -c "
-import json, urllib.request, os
-decision = json.load(open('decision.json'))
-text = f\"Retrain decision: **{decision['decision'].upper()}** — \" + '; '.join(decision['reasons'])
-body = json.dumps({'content': text, 'text': text}).encode()
-req = urllib.request.Request(os.environ['ALERT_WEBHOOK_URL'], data=body, headers={'Content-Type': 'application/json'})
-urllib.request.urlopen(req, timeout=5)
-"
+          import json, urllib.request, os
+          decision = json.load(open('decision.json'))
+          text = f\"Retrain decision: **{decision['decision'].upper()}** — \" + '; '.join(decision['reasons'])
+          body = json.dumps({'content': text, 'text': text}).encode()
+          req = urllib.request.Request(os.environ['ALERT_WEBHOOK_URL'], data=body, headers={'Content-Type': 'application/json'})
+          urllib.request.urlopen(req, timeout=5)
+          "
         env:
           ALERT_WEBHOOK_URL: ${{ secrets.ALERT_WEBHOOK_URL }}
-
       - name: Promote — push new revision to HF Hub
         if: steps.gate.outcome == 'success'
         run: |
           python -c "
-from huggingface_hub import HfApi
-api = HfApi()
-api.upload_file(
-    path_or_fileobj='/tmp/kaggle-output/challenger_head.pt',
-    path_in_repo='head.pt',
-    repo_id='${{ vars.HF_MODEL_REPO }}',
-    commit_message='promoted challenger — see decision.json',
-)
-api.upload_file(
-    path_or_fileobj='/tmp/kaggle-output/challenger_eval_report.json',
-    path_in_repo='metrics.json',
-    repo_id='${{ vars.HF_MODEL_REPO }}',
-    commit_message='challenger metrics',
-)
-"
+          from huggingface_hub import HfApi
+          api = HfApi()
+          api.upload_file(
+              path_or_fileobj='/tmp/kaggle-output/challenger_head.pt',
+              path_in_repo='head.pt',
+              repo_id='${{ vars.HF_MODEL_REPO }}',
+              commit_message='promoted challenger — see decision.json',
+          )
+          api.upload_file(
+              path_or_fileobj='/tmp/kaggle-output/challenger_eval_report.json',
+              path_in_repo='metrics.json',
+              repo_id='${{ vars.HF_MODEL_REPO }}',
+              commit_message='challenger metrics',
+          )
+          "
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
-
       - name: Update embeddings cache dataset on Kaggle
         if: always()
         run: |
@@ -135,37 +121,32 @@ api.upload_file(
         env:
           KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
           KAGGLE_KEY: ${{ secrets.KAGGLE_KEY }}
-
       - name: Update watermark + mark items deployed
         if: always()
         run: |
           python -c "
-import json, boto3
-from datetime import datetime, timezone
-
-decision = json.load(open('decision.json'))
-promoted = decision['decision'] == 'promote'
-
-dynamodb = boto3.resource('dynamodb')
-state = dynamodb.Table('ser-inference-retrain-state')
-state.put_item(Item={
-    'state_key': 'watermark',
-    'last_trained_at': datetime.now(timezone.utc).isoformat(),
-    'last_decision': decision['decision'],
-})
-
-if promoted:
-    manifest = json.load(open('batch_manifest.json'))
-    queue = dynamodb.Table('ser-inference-review-queue')
-    for rid in manifest['request_ids']:
-        queue.update_item(
-            Key={'request_id': rid},
-            UpdateExpression='SET #s = :d',
-            ExpressionAttributeNames={'#s': 'status'},
-            ExpressionAttributeValues={':d': 'deployed'},
-        )
-"
-
+          import json, boto3
+          from datetime import datetime, timezone
+          decision = json.load(open('decision.json'))
+          promoted = decision['decision'] == 'promote'
+          dynamodb = boto3.resource('dynamodb')
+          state = dynamodb.Table('ser-inference-retrain-state')
+          state.put_item(Item={
+              'state_key': 'watermark',
+              'last_trained_at': datetime.now(timezone.utc).isoformat(),
+              'last_decision': decision['decision'],
+          })
+          if promoted:
+              manifest = json.load(open('batch_manifest.json'))
+              queue = dynamodb.Table('ser-inference-review-queue')
+              for rid in manifest['request_ids']:
+                  queue.update_item(
+                      Key={'request_id': rid},
+                      UpdateExpression='SET #s = :d',
+                      ExpressionAttributeNames={'#s': 'status'},
+                      ExpressionAttributeValues={':d': 'deployed'},
+                  )
+          "
       - name: Trigger deploy workflow
         if: steps.gate.outcome == 'success'
         uses: peter-evans/repository-dispatch@v3
