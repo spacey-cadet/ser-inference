@@ -18,7 +18,7 @@
 #     -t <account>.dkr.ecr.us-east-1.amazonaws.com/ser-inference:latest \
 #     --push .
 
-FROM public.ecr.aws/lambda/python:3.12
+FROM public.ecr.aws/lambda/python:3.11
 
 # WavLM (torch) needs OpenMP, same fix as lightgbm needed in Project 1.
 RUN dnf install -y libgomp && dnf clean all
