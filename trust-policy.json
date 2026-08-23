@@ -9,8 +9,9 @@
             "Action": "sts:AssumeRoleWithWebIdentity",
             "Condition": {
                 "StringEquals": {
-                    "token.actions.githubusercontent.com:aud": "sts.amazonaws.com"
-                },
+                    "token.actions.githubusercontqqent.com:aud": "sts.amazonaws.com",
+                    "token.actions.githubusercontent.com:repository": "spacey-cadet/ser-inference"
+                    },
                 "StringLike": {
                     "token.actions.githubusercontent.com:sub": "repo:spacey-cadet/ser-inference:*"
                 }
