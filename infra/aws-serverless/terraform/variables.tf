@@ -8,6 +8,12 @@ variable "account_id" {
   default     = "395249043027"
 }
 
+variable "model_id" {
+  description = "HF Hub repo ID — must match config.py's MODEL_ID default unless intentionally overriding it"
+  type        = string
+  default     = "space-cadet/wavlm-ser"
+}
+
 variable "project_name" {
   default = "ser-inference"
 }

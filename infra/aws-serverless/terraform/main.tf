@@ -117,6 +117,8 @@ resource "aws_lambda_function" "ser_inference" {
   environment {
     variables = {
       STORAGE_BACKEND      = "aws"
+      MODEL_ID             = var.model_id
+      CACHE_DIR            = "/var/task/model_cache"  # must match Dockerfile.lambda's baked CACHE_DIR exactly
       AUDIO_BUCKET         = aws_s3_bucket.ser_data.bucket
       FEATURE_LOG_PREFIX   = "feature-logs/"
       AUDIO_SAMPLE_PREFIX  = "audio-samples/"
