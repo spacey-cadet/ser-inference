@@ -12,7 +12,7 @@ transformers
 speechbrain
 huggingface_hub
 av
-numpy
+numpy>=1.26,<2.2
 soundfile
 
 # Track 1 — modeling rigor / calibration
