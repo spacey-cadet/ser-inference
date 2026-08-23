@@ -27,7 +27,7 @@ COPY requirements.txt .
 # requirements.txt must already include speechbrain (it does, if this
 # is the same file your local .venv installs from) — nothing extra to
 # add here beyond mangum/huggingface_hub/boto3 for the Lambda glue.
-RUN pip install --no-cache-dir --only-binary=all  --target "${LAMBDA_TASK_ROOT}" \
+RUN pip install --no-cache-dir --only-binary=:all:  --target "${LAMBDA_TASK_ROOT}" \
     -r requirements.txt 
 
 COPY app/ ${LAMBDA_TASK_ROOT}/app/
