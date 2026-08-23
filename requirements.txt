@@ -12,7 +12,7 @@ transformers
 speechbrain
 huggingface_hub
 av
-numpy
+numpy>=1.26,<2.2
 soundfile
 
 # Track 1 — modeling rigor / calibration
@@ -24,7 +24,7 @@ pandas
 
 # Track 2 — data quality / drift
 great_expectations
-webrtcvad
+webrtcvad-wheels
 
 # Track 2.5 — alerting
 requests

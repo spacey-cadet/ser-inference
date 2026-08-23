@@ -18,19 +18,17 @@
 #     -t <account>.dkr.ecr.us-east-1.amazonaws.com/ser-inference:latest \
 #     --push .
 
-FROM public.ecr.aws/lambda/python:3.12
+FROM public.ecr.aws/lambda/python:3.11
 
 # WavLM (torch) needs OpenMP, same fix as lightgbm needed in Project 1.
-RUN dnf install -y libgomp && dnf clean all
+RUN yum install -y libgomp pkgconfig ffmpeg-devel && yum clean all
 
 COPY requirements.txt .
 # requirements.txt must already include speechbrain (it does, if this
 # is the same file your local .venv installs from) — nothing extra to
 # add here beyond mangum/huggingface_hub/boto3 for the Lambda glue.
-RUN pip install --no-cache-dir --target "${LAMBDA_TASK_ROOT}" \
-    -r requirements.txt \
-    mangum \
-    boto3
+RUN pip install --no-cache-dir --only-binary=:all:  --target "${LAMBDA_TASK_ROOT}" \
+    -r requirements.txt 
 
 COPY app/ ${LAMBDA_TASK_ROOT}/app/
 
