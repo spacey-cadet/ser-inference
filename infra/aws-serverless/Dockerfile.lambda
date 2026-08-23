@@ -21,7 +21,7 @@
 FROM public.ecr.aws/lambda/python:3.11
 
 # WavLM (torch) needs OpenMP, same fix as lightgbm needed in Project 1.
-RUN yum install -y libgomp && yum clean all
+RUN yum install -y libgomp pkgconfig ffmpeg-devel && yum clean all
 
 COPY requirements.txt .
 # requirements.txt must already include speechbrain (it does, if this
