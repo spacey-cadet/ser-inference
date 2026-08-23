@@ -104,6 +104,9 @@ class RedisSessionStore(SessionStore):
 
 
 def build_session_store(settings) -> SessionStore:
+    if settings.storage_backend == "aws":
+        from app.session.dynamodb_state import DynamoDBSessionStore
+        return DynamoDBSessionStore(settings.session_state_table)
     if settings.session_backend == "redis" and settings.redis_url:
         return RedisSessionStore(settings.redis_url)
     return InMemorySessionStore()

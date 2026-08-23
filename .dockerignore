@@ -1,0 +1,30 @@
+.venv/
+venv/
+env/
+__pycache__/
+*.pyc
+.git/
+.gitignore
+.pytest_cache/
+*.egg-info/
+.mypy_cache/
+.DS_Store
+
+# Datasets / raw audio / checkpoints — these should NOT be in the image context
+# unless you specifically need to COPY a small model file in
+data/
+datasets/
+*.wav
+*.flac
+notebooks/
+*.ipynb
+tests/
+
+# Terraform / infra — no reason this needs to be in the inference image
+*.tf
+*.tfstate*
+.terraform/
+
+# Docs
+*.md
+README*

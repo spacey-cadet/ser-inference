@@ -5,3 +5,30 @@ testfile*.wav
 testfile*
 __pycache__/
 model_cache/
+# 1. Local Terraform directory (bulky provider binaries and modules)
+**/.terraform/
+
+# 2. Terraform state files (contain sensitive data and secrets)
+*.tfstate
+*.tfstate.*
+
+# 3. Crash logs
+crash.log
+crash.*.log
+
+# 4. Variables files (often contain passwords or private keys)
+*.tfvars
+*.tfvars.json
+
+# 5. Override files (local-only developer modifications)
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# 6. Lock info files (temporary state lock metadata)
+.terraform.tfstate.lock.info
+
+# 7. CLI configuration files
+.terraformrc
+terraform.rc

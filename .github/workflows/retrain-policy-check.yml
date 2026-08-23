@@ -1,0 +1,57 @@
+name: Retrain policy check
+
+on:
+  schedule:
+    - cron: "0 6 * * *"   # daily — this step is cheap, the actual retrain isn't
+  workflow_dispatch: {}
+
+permissions:
+  id-token: write   # for OIDC -> AWS
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      should_train: ${{ steps.policy.outputs.should_train }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - run: pip install boto3
+
+      - name: Run drift check (existing script, unmodified)
+        id: drift
+        run: |
+          python scripts/drift_check.py --out drift_result.json || true
+          if grep -q '"drift_detected": true' drift_result.json 2>/dev/null; then
+            echo "flagged=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "flagged=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check retrain policy
+        id: policy
+        run: |
+          ARGS="--review-queue-table ser-inference-review-queue \
+                --retrain-state-table ser-inference-retrain-state \
+                --min-new-labels 50 --cooldown-days 3 --max-staleness-days 60"
+          if [ "${{ steps.drift.outputs.flagged }}" = "true" ]; then
+            ARGS="$ARGS --drift-flagged"
+          fi
+          python scripts/check_retrain_policy.py $ARGS
+
+      - name: Trigger retrain workflow
+        if: steps.policy.outputs.should_train == 'true'
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          event-type: retrain-triggered

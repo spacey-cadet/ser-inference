@@ -1,0 +1,78 @@
+# infra/aws-serverless/Dockerfile.lambda
+#
+# Bakes the model in at BUILD time by calling the real
+# app.model.loader.load_model()/verify_model() — not a reimplemented
+# download, so the on-disk layout at runtime is guaranteed identical
+# to what load_model() already expects (CKPT+*/wavlm.ckpt,
+# CKPT+*/classifier.ckpt), and a broken checkpoint fails the BUILD
+# instead of getting deployed.
+#
+# Build with buildx and provenance/sbom OFF — Lambda's CreateFunction
+# rejects the multi-manifest OCI index buildx produces by default:
+#
+#   docker buildx build --platform linux/amd64 \
+#     --provenance=false --sbom=false \
+#     --build-arg MODEL_ID=space-cadet/wavlm-ser \
+#     --build-arg HF_TOKEN=... \
+#     -f infra/aws-serverless/Dockerfile.lambda \
+#     -t <account>.dkr.ecr.us-east-1.amazonaws.com/ser-inference:latest \
+#     --push .
+
+FROM public.ecr.aws/lambda/python:3.12
+
+# WavLM (torch) needs OpenMP, same fix as lightgbm needed in Project 1.
+RUN dnf install -y libgomp && dnf clean all
+
+COPY requirements.txt .
+# requirements.txt must already include speechbrain (it does, if this
+# is the same file your local .venv installs from) — nothing extra to
+# add here beyond mangum/huggingface_hub/boto3 for the Lambda glue.
+RUN pip install --no-cache-dir --target "${LAMBDA_TASK_ROOT}" \
+    -r requirements.txt \
+    mangum \
+    boto3
+
+COPY app/ ${LAMBDA_TASK_ROOT}/app/
+
+ARG MODEL_ID
+ARG HF_TOKEN=""
+# Absolute path — config.py's default "./model_cache" is relative,
+# which would resolve against Lambda's read-only filesystem at
+# runtime. Bake into and read from this exact absolute path both
+# times, or huggingface_hub may try to write a lockfile/etag at
+# runtime and fail on a read-only mount.
+ENV CACHE_DIR=${LAMBDA_TASK_ROOT}/model_cache
+
+# Bake in by calling the REAL loader (app.model.loader.load_model),
+# not a hand-rolled download — and verify_model()'s sanity check runs
+# at BUILD time, so a broken checkpoint fails the build, not a live
+# Lambda. revision is always "main" — config.py's Settings has no
+# separate revision field, so the champion is whatever's on main.
+RUN python -c "\
+import os, sys; \
+sys.path.insert(0, os.environ['LAMBDA_TASK_ROOT']); \
+from app.model.loader import load_model, verify_model; \
+m = load_model( \
+    model_id=os.environ['MODEL_ID'], \
+    hf_token=os.environ.get('HF_TOKEN') or None, \
+    cache_dir=os.environ['CACHE_DIR'], \
+    revision='main', \
+); \
+verify_model(m); \
+print('Baked and verified:', m.revision_tag)"
+
+ENV STORAGE_BACKEND=aws
+ENV HF_HUB_OFFLINE=1
+ENV MODEL_ID=${MODEL_ID}
+
+# KNOWN RISK, not yet verified: speechbrain's WavLM() wrapper downloads
+# the frozen microsoft/wavlm-base-plus backbone via its own HF
+# integration (source=WAVLM_SOURCE, save_path=cache_dir/pretrained_models/wavlm),
+# separately from huggingface_hub's snapshot_download used for the
+# checkpoint above. Not confirmed that this respects HF_HUB_OFFLINE=1
+# the same way. Test a cold start with network genuinely unavailable
+# before trusting this has zero runtime network dependency — if it
+# does reach out, the Lambda just needs default (non-VPC) networking,
+# which costs nothing extra either way, just isn't fully offline.
+
+CMD ["app.main.handler"]

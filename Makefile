@@ -17,3 +17,5 @@ latency:
 
 calibrate:
 	python scripts/calibration_fit.py --predictions data/val_predictions.csv --method isotonic
+evaluate:
+	    python scripts/eval_report.py --predictions data/val_predictions.csv --out data/eval_report.json

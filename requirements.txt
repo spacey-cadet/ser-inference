@@ -31,3 +31,7 @@ requests
 
 # Track 3 — session state (optional Redis backend)
 redis
+
+# AWS serverless deployment
+boto3
+mangum

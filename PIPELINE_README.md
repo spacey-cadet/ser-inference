@@ -138,12 +138,4 @@ pytest tests/ -v
 | 3.5 CI/CD | `.github/workflows/ci-eval-gate.yml` |
 
 
----
-title: Ser Inference
-emoji: 🚀
-colorFrom: pink
-colorTo: green
-sdk: docker
-pinned: false
----
 
