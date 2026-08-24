@@ -8,9 +8,9 @@ pydantic-settings
 # Model / inference
 torch
 torchaudio
-transformers
+transformers>=4.30,<5
+huggingface_hub>=0.20,<1
 speechbrain
-huggingface_hub
 av
 numpy>=1.26,<2.2
 soundfile
