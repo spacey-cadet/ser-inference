@@ -40,7 +40,7 @@ jobs:
         run: |
           docker buildx build --platform linux/amd64 \
             --provenance=false --sbom=false \
-            --build-arg HF_MODEL_ID=${{ vars.HF_MODEL}} \
+            --build-arg MODEL_ID=${{ vars.HF_MODEL}} \
             --build-arg HF_MODEL_REVISION=${{ vars.HF_CHAMPION_REVISION }} \
             --build-arg HF_TOKEN=${{ secrets.HF_TOKEN }} \
             -f infra/aws-serverless/Dockerfile.lambda \
