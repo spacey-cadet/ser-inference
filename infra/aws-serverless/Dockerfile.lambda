@@ -84,5 +84,4 @@ ENV HF_HUB_OFFLINE=1
 # before trusting this has zero runtime network dependency — if it
 # does reach out, the Lambda just needs default (non-VPC) networking,
 # which costs nothing extra either way, just isn't fully offline.
-
 CMD ["app.main.handler"]
