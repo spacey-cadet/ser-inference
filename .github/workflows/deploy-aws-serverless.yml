@@ -61,8 +61,15 @@ jobs:
           python -c "
           import json, urllib.request, os
           text = 'Deployed new champion to Lambda: ${{ github.sha }}'
-          body = json.dumps({'content': text, 'text': text}).encode()
-          req = urllib.request.Request(os.environ['ALERT_WEBHOOK_URL'], data=body, headers={'Content-Type': 'application/json'})
+          body = json.dumps({'content': text}).encode()
+          req = urllib.request.Request(
+              os.environ['ALERT_WEBHOOK_URL'],
+              data=body,
+              headers={
+                  'Content-Type': 'application/json',
+                  'User-Agent': 'ser-inference-deploy-bot/1.0',
+              },
+          )
           urllib.request.urlopen(req, timeout=5)
           "
         env:
