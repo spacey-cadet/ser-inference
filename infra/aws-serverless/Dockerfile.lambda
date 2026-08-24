@@ -1,4 +1,6 @@
+# syntax=docker/dockerfile:1.4
 # infra/aws-serverless/Dockerfile.lambda
+
 #
 # Bakes the model in at BUILD time by calling the real
 # app.model.loader.load_model()/verify_model() — not a reimplemented
@@ -51,22 +53,23 @@ ENV CACHE_DIR=${LAMBDA_TASK_ROOT}/model_cache
 # at BUILD time, so a broken checkpoint fails the build, not a live
 # Lambda. revision is always "main" — config.py's Settings has no
 # separate revision field, so the champion is whatever's on main.
-RUN python -c "\
-import os, sys, traceback; \
-sys.path.insert(0, os.environ['LAMBDA_TASK_ROOT']); \
-try: \
-    from app.model.loader import load_model, verify_model; \
-    m = load_model( \
-        model_id=os.environ['MODEL_ID'], \
-        hf_token=os.environ.get('HF_TOKEN') or None, \
-        cache_dir=os.environ['CACHE_DIR'], \
-        revision='main', \
-    ); \
-    verify_model(m); \
-    print('Baked and verified:', m.revision_tag); \
-except Exception: \
-    traceback.print_exc(); \
-    sys.exit(1)"
+RUN python3 << 'EOF'
+import os, sys, traceback
+sys.path.insert(0, os.environ['LAMBDA_TASK_ROOT'])
+try:
+    from app.model.loader import load_model, verify_model
+    m = load_model(
+        model_id=os.environ['MODEL_ID'],
+        hf_token=os.environ.get('HF_TOKEN') or None,
+        cache_dir=os.environ['CACHE_DIR'],
+        revision='main',
+    )
+    verify_model(m)
+    print('Baked and verified:', m.revision_tag)
+except Exception:
+    traceback.print_exc()
+    sys.exit(1)
+EOF
 
 ENV STORAGE_BACKEND=aws
 ENV HF_HUB_OFFLINE=1
