@@ -53,7 +53,8 @@ ENV CACHE_DIR=${LAMBDA_TASK_ROOT}/model_cache
 # at BUILD time, so a broken checkpoint fails the build, not a live
 # Lambda. revision is always "main" — config.py's Settings has no
 # separate revision field, so the champion is whatever's on main.
-RUN python3 << 'EOF'
+RUN <<EOF
+#!/usr/bin/env python3
 import os, sys, traceback
 sys.path.insert(0, os.environ['LAMBDA_TASK_ROOT'])
 try:
