@@ -34,6 +34,11 @@ COPY app/ ${LAMBDA_TASK_ROOT}/app/
 
 ARG MODEL_ID
 ARG HF_TOKEN=""
+# ARG only makes these available for Dockerfile ${...} substitution —
+# it does NOT populate the process environment that os.environ reads
+# from inside a RUN step. ENV must come before the RUN below that
+# actually consumes MODEL_ID via os.environ['MODEL_ID'].
+ENV MODEL_ID=${MODEL_ID}
 # Absolute path — config.py's default "./model_cache" is relative,
 # which would resolve against Lambda's read-only filesystem at
 # runtime. Bake into and read from this exact absolute path both
@@ -61,7 +66,6 @@ print('Baked and verified:', m.revision_tag)"
 
 ENV STORAGE_BACKEND=aws
 ENV HF_HUB_OFFLINE=1
-ENV MODEL_ID=${MODEL_ID}
 
 # KNOWN RISK, not yet verified: speechbrain's WavLM() wrapper downloads
 # the frozen microsoft/wavlm-base-plus backbone via its own HF
